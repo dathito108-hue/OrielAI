@@ -16,6 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +45,8 @@ private fun OrielApp() {
     }
     var downloadState by remember { mutableStateOf<DownloadStatus?>(null) }
     var tab by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    var selectedModelPath by remember { mutableStateOf(context.getSharedPreferences("oriel_model", 0).getString("private_path", null)) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -48,7 +55,28 @@ private fun OrielApp() {
             } catch (_: SecurityException) { }
             modelUri = uri.toString()
             context.getSharedPreferences("oriel_model", 0).edit().putString("uri", modelUri).apply()
-            status = "Đã chọn tệp GGUF. Runtime suy luận vẫn cần llama.cpp JNI."
+            status = "Đang sao chép GGUF vào bộ nhớ riêng của OrielAI…"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val name = (uri.lastPathSegment ?: "imported-model.gguf")
+                            .substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
+                            .let { if (it.endsWith(".gguf", ignoreCase = true)) it else "$"+"{it}.gguf" }
+                        val dir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
+                        val target = File(dir, name)
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            FileOutputStream(target).use { output -> input.copyTo(output) }
+                        } ?: error("Không mở được tệp đã chọn")
+                        require(target.length() > 1024 * 1024) { "Tệp quá nhỏ, không giống GGUF hợp lệ" }
+                        target.absolutePath
+                    }
+                }
+                result.onSuccess { path ->
+                    selectedModelPath = path
+                    context.getSharedPreferences("oriel_model", 0).edit().putString("private_path", path).apply()
+                    status = "Đã nhập mô hình vào bộ nhớ riêng: $"+"{path}"
+                }.onFailure { e -> status = "Nhập mô hình thất bại: $"+"{e.message ?: "lỗi không xác định"}" }
+            }
         }
     }
 
@@ -136,7 +164,8 @@ private fun OrielApp() {
                         Text(status, style = MaterialTheme.typography.bodySmall)
                         Text("Nguồn: ggml-org/Qwen3.5-0.8B-GGUF · bản Q4_0. Tải xuống cần kết nối Internet và đủ dung lượng trống. Tệp được lưu trong thư mục riêng của OrielAI.")
                         OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Chọn GGUF khác") }
-                        Text(modelUri?.let { "Tệp được chọn thủ công: " + it } ?: "Chưa chọn tệp khác.")
+                        Text(modelUri?.let { "URI nguồn: " + it } ?: "Chưa chọn tệp khác.")
+                        Text(selectedModelPath?.let { "Bản sao trong vùng riêng: $"+"{it}" } ?: "Chưa có bản sao mô hình đã nhập.")
                         Text("Lưu ý: tải xong chưa có nghĩa là AI đã chạy. Runtime llama.cpp JNI chưa được tích hợp nên chưa thể nạp và sinh câu trả lời local.")
                         Text("Runtime: " + RuntimeNotIntegrated().runtimeInfo())
                     }
