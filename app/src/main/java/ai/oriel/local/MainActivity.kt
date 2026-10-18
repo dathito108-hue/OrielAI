@@ -61,7 +61,7 @@ private fun OrielApp() {
                     runCatching {
                         val name = (uri.lastPathSegment ?: "imported-model.gguf")
                             .substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
-                            .let { if (it.endsWith(".gguf", ignoreCase = true)) it else "$"+"{it}.gguf" }
+                            .let { if (it.endsWith(".gguf", ignoreCase = true)) it else "${it}.gguf" }
                         val dir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
                         val target = File(dir, name)
                         context.contentResolver.openInputStream(uri)?.use { input ->
@@ -74,8 +74,8 @@ private fun OrielApp() {
                 result.onSuccess { path ->
                     selectedModelPath = path
                     context.getSharedPreferences("oriel_model", 0).edit().putString("private_path", path).apply()
-                    status = "Đã nhập mô hình vào bộ nhớ riêng: $"+"{path}"
-                }.onFailure { e -> status = "Nhập mô hình thất bại: $"+"{e.message ?: "lỗi không xác định"}" }
+                    status = "Đã nhập mô hình vào bộ nhớ riêng: ${path}"
+                }.onFailure { e -> status = "Nhập mô hình thất bại: ${e.message ?: "lỗi không xác định"}" }
             }
         }
     }
@@ -165,7 +165,7 @@ private fun OrielApp() {
                         Text("Nguồn: ggml-org/Qwen3.5-0.8B-GGUF · bản Q4_0. Tải xuống cần kết nối Internet và đủ dung lượng trống. Tệp được lưu trong thư mục riêng của OrielAI.")
                         OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Chọn GGUF khác") }
                         Text(modelUri?.let { "URI nguồn: " + it } ?: "Chưa chọn tệp khác.")
-                        Text(selectedModelPath?.let { "Bản sao trong vùng riêng: $"+"{it}" } ?: "Chưa có bản sao mô hình đã nhập.")
+                        Text(selectedModelPath?.let { "Bản sao trong vùng riêng: ${it}" } ?: "Chưa có bản sao mô hình đã nhập.")
                         Text("Lưu ý: tải xong chưa có nghĩa là AI đã chạy. Runtime llama.cpp JNI chưa được tích hợp nên chưa thể nạp và sinh câu trả lời local.")
                         Text("Runtime: " + RuntimeNotIntegrated().runtimeInfo())
                     }
