@@ -64,7 +64,7 @@ private fun OrielApp() {
                             .let { if (it.endsWith(".gguf", ignoreCase = true)) it else "${it}.gguf" }
                         val dir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
                         val target = File(dir, name)
-                        val partial = File(dir, "$"+"{name}.part")
+                        val partial = File(dir, "${name}.part")
                         try {
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 FileOutputStream(partial).use { output -> input.copyTo(output) }
