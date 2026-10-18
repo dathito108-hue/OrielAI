@@ -20,6 +20,7 @@ class LlamaCppRuntime(context: Context) : LocalModelRuntime {
     private val mutex = Mutex()
     @Volatile private var engine: InferenceEngine? = null
     @Volatile private var loadedPath: String? = null
+    @Volatile private var activeSystemPrompt: String? = null
 
     override val isAvailable: Boolean = true
 
@@ -48,6 +49,7 @@ class LlamaCppRuntime(context: Context) : LocalModelRuntime {
                 if (loadedPath != modelFile.absolutePath || inference.state.value !is InferenceEngine.State.ModelReady) {
                     inference.loadModel(modelFile.absolutePath)
                     loadedPath = modelFile.absolutePath
+                    activeSystemPrompt = null
                 }
             }
         }
@@ -61,7 +63,11 @@ class LlamaCppRuntime(context: Context) : LocalModelRuntime {
                     check(inference.state.value is InferenceEngine.State.ModelReady) {
                         "Mô hình chưa sẵn sàng: ${inference.state.value.javaClass.simpleName}"
                     }
-                    inference.setSystemPrompt(profile.systemPrompt.take(8000))
+                    val safeSystemPrompt = profile.systemPrompt.take(8000)
+                    if (activeSystemPrompt != safeSystemPrompt) {
+                        inference.setSystemPrompt(safeSystemPrompt)
+                        activeSystemPrompt = safeSystemPrompt
+                    }
                     val prompt = messages.lastOrNull { it.role == "user" }?.content
                         ?.trim()?.take(12000).orEmpty()
                     require(prompt.isNotBlank()) { "Tin nhắn trống." }
@@ -84,6 +90,7 @@ class LlamaCppRuntime(context: Context) : LocalModelRuntime {
                 current.state.value is InferenceEngine.State.Error) current.cleanUp()
         }
         loadedPath = null
+        activeSystemPrompt = null
     }
 
     override fun runtimeInfo(): String =
