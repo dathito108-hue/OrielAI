@@ -166,7 +166,12 @@ internal class InferenceEngineImpl private constructor(
                 _state.value = InferenceEngine.State.LoadingModel
                 load(pathToModel).let {
                     // TODO-han.yin: find a better way to pass other error codes
-                    if (it != 0) throw UnsupportedArchitectureException(\n                        "llama.cpp không nạp được tệp GGUF (mã lỗi $it). " +\n                            "Ngoại lệ này trước đây bị gắn nhãn kiến trúc không hỗ trợ cho mọi lỗi nạp. " +\n                            "Hãy kiểm tra logcat có tag llama.cpp để biết nguyên nhân gốc: kiến trúc/tensor không hỗ trợ, tệp hỏng hoặc thiếu bộ nhớ."\n                    )
+                    if (it != 0) {
+                        throw UnsupportedArchitectureException(
+                            "llama.cpp no pudo cargar el archivo GGUF (código $it). " +
+                                "Consulte logcat con la etiqueta llama.cpp para conocer la causa raíz: arquitectura/tensor no compatible, archivo dañado o memoria insuficiente."
+                        )
+                    }
                 }
                 prepare().let {
                     if (it != 0) throw IOException("Failed to prepare resources")
