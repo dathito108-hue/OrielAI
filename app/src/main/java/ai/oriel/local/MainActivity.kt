@@ -64,11 +64,24 @@ private fun OrielApp() {
                             .let { if (it.endsWith(".gguf", ignoreCase = true)) it else "${it}.gguf" }
                         val dir = File(context.filesDir, "models").apply { if (!exists()) mkdirs() }
                         val target = File(dir, name)
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            FileOutputStream(target).use { output -> input.copyTo(output) }
-                        } ?: error("Không mở được tệp đã chọn")
-                        require(target.length() > 1024 * 1024) { "Tệp quá nhỏ, không giống GGUF hợp lệ" }
-                        target.absolutePath
+                        val partial = File(dir, "$"+"{name}.part")
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                FileOutputStream(partial).use { output -> input.copyTo(output) }
+                            } ?: error("Không mở được tệp đã chọn")
+                            require(partial.length() > 1024 * 1024) { "Tệp quá nhỏ, không giống GGUF hợp lệ" }
+                            val magic = ByteArray(4)
+                            partial.inputStream().use { input ->
+                                require(input.read(magic) == 4 && magic.contentEquals(byteArrayOf(0x47, 0x47, 0x55, 0x46))) {
+                                    "Sai định dạng: tệp không có chữ ký GGUF"
+                                }
+                            }
+                            if (target.exists()) target.delete()
+                            check(partial.renameTo(target)) { "Không thể hoàn tất lưu tệp mô hình" }
+                            target.absolutePath
+                        } finally {
+                            if (partial.exists()) partial.delete()
+                        }
                     }
                 }
                 result.onSuccess { path ->
