@@ -186,8 +186,8 @@ private fun OrielApp() {
                         OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Chọn GGUF khác") }
                         Text(modelUri?.let { "URI nguồn: " + it } ?: "Chưa chọn tệp khác.")
                         Text(selectedModelPath?.let { "Bản sao trong vùng riêng: ${it}" } ?: "Chưa có bản sao mô hình đã nhập.")
-                        Text("Lưu ý: tải xong chưa có nghĩa là AI đã chạy. Runtime llama.cpp JNI chưa được tích hợp nên chưa thể nạp và sinh câu trả lời local.")
-                        Text("Runtime: " + RuntimeNotIntegrated().runtimeInfo())
+                        Text("Lưu ý: tải xong chưa có nghĩa là AI đã chạy. Hãy mở tab Trò chuyện, nạp mô hình và kiểm tra kết quả thực tế.")
+                        Text("Runtime: " + LlamaCppRuntime(context).runtimeInfo())
                     }
                     1 -> {
                         Text("Chỉ dẫn hệ thống", style = MaterialTheme.typography.titleMedium)
