@@ -19,13 +19,17 @@ class ModelDownloadManager(private val context: Context) {
         const val PREFS = "oriel_model_download"
         const val KEY_DOWNLOAD_ID = "download_id"
         const val KEY_MODEL_PATH = "model_path"
+
+        // The published Q4_0 artifact is about 563 MB. Reject partial downloads.
+        private const val MIN_MODEL_BYTES = 450_000_000L
     }
 
     private val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     fun existingModel(): File? {
-        val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), MODEL_FILE)
-        return file.takeIf { it.isFile && it.length() > 100_000_000L }
+        val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
+        val file = File(directory, MODEL_FILE)
+        return file.takeIf { it.isFile && it.length() >= MIN_MODEL_BYTES }
     }
 
     fun start(): Long {
@@ -47,7 +51,7 @@ class ModelDownloadManager(private val context: Context) {
         if (id <= 0L) {
             val file = existingModel()
             return if (file != null) DownloadStatus.Complete(file.absolutePath, file.length())
-            else DownloadStatus.Failed("Không tìm thấy tệp mô hình hợp lệ.")
+            else DownloadStatus.Failed("Không tìm thấy tệp mô hình đầy đủ.")
         }
         val cursor: Cursor = manager.query(DownloadManager.Query().setFilterById(id))
         cursor.use {
@@ -65,7 +69,7 @@ class ModelDownloadManager(private val context: Context) {
                         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                             .putString(KEY_MODEL_PATH, file.absolutePath).apply()
                         DownloadStatus.Complete(file.absolutePath, file.length())
-                    } else DownloadStatus.Failed("Tải xong nhưng tệp không đạt kiểm tra dung lượng.")
+                    } else DownloadStatus.Failed("Tải xong nhưng tệp thiếu hoặc không đầy đủ; hãy tải lại.")
                 }
                 DownloadManager.STATUS_FAILED -> {
                     val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
