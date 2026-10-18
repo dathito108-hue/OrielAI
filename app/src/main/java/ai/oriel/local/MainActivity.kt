@@ -53,6 +53,11 @@ private fun OrielApp() {
     var chatStatus by remember { mutableStateOf("Nạp mô hình để bắt đầu suy luận local.") }
     val scope = rememberCoroutineScope()
     var selectedModelPath by remember { mutableStateOf(context.getSharedPreferences("oriel_model", 0).getString("private_path", null)) }
+    val taskStore = remember(context) { TaskStore(context) }
+    val taskItems = remember { mutableStateListOf<OrielTask>().apply { addAll(taskStore.all()) } }
+    var taskInput by remember { mutableStateOf("") }
+    var taskBusy by remember { mutableStateOf(false) }
+    var taskStatus by remember { mutableStateOf("Tác vụ được lưu trên thiết bị; cần nạp mô hình để chạy.") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -225,10 +230,115 @@ private fun OrielApp() {
                         }) { Text("Khôi phục mặc định") }
                     }
                     2 -> {
-                        Text("Bộ điều phối tác vụ", style = MaterialTheme.typography.titleMedium)
-                        Text("Mục tiêu: lập kế hoạch → chia bước → gọi công cụ có quyền → kiểm tra kết quả → thử lại có giới hạn.")
-                        Text("Tác vụ nền và gọi công cụ chưa được bật ở runtime này. Chúng sẽ không được giả lập.")
-                        Text("Các thao tác nhạy cảm như chuyển tiền, xóa dữ liệu hoặc thay đổi tài khoản sẽ yêu cầu xác nhận rõ ràng.")
+                        Text("Bộ điều phối tác vụ local", style = MaterialTheme.typography.titleMedium)
+                        Text("Tạo tác vụ, yêu cầu mô hình lập kế hoạch rồi xử lý từng bước theo thứ tự. Tiến độ và kết quả được lưu cục bộ để còn sau khi đóng ứng dụng.")
+                        Text("Giới hạn an toàn: phiên bản này chỉ suy luận bằng mô hình local; chưa gọi API, chưa điều khiển ứng dụng khác và không tự thực hiện giao dịch hay thao tác hệ thống.")
+                        OutlinedTextField(
+                            value = taskInput,
+                            onValueChange = { taskInput = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Mục tiêu cần hoàn thành") },
+                            minLines = 2
+                        )
+                        Button(
+                            enabled = taskInput.isNotBlank() && !taskBusy,
+                            onClick = {
+                                val goal = taskInput.trim().take(4000)
+                                val task = taskStore.create(goal)
+                                taskItems.add(0, task)
+                                taskInput = ""
+                                taskStatus = "Đã lưu tác vụ. Nạp mô hình trong tab Trò chuyện để thực thi."
+                            }
+                        ) { Text("Tạo và lưu tác vụ") }
+                        Text(taskStatus, style = MaterialTheme.typography.bodySmall)
+                        if (!chatReady) {
+                            Text("Để chạy tác vụ: mở tab Trò chuyện → nạp mô hình local. Tác vụ đã tạo vẫn được lưu.")
+                        }
+                        taskItems.toList().forEach { task ->
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(task.goal, style = MaterialTheme.typography.titleSmall)
+                                    Text("Trạng thái: ${task.state} · bước ${task.completedSteps}/${task.steps.size}")
+                                    if (task.steps.isNotEmpty()) Text(task.steps.mapIndexed { i, s -> "${i + 1}. ${s}" }.joinToString("\n"))
+                                    if (task.error.isNotBlank()) Text("Lỗi: ${task.error}", color = MaterialTheme.colorScheme.error)
+                                    if (task.result.isNotBlank()) Text("Kết quả gần nhất:\n${task.result.take(5000)}")
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            enabled = chatReady && !chatBusy && !taskBusy &&
+                                                task.state != OrielTaskState.RUNNING &&
+                                                task.state != OrielTaskState.COMPLETED,
+                                            onClick = {
+                                                taskBusy = true
+                                                taskStatus = "Đang lập kế hoạch và thực hiện từng bước bằng mô hình local…"
+                                                scope.launch {
+                                                    var current = task.copy(state = OrielTaskState.RUNNING, error = "")
+                                                    taskStore.save(current)
+                                                    val planResult = chatRuntime.generate(
+                                                        listOf(
+                                                            ChatMessage("system", "Bạn là bộ lập kế hoạch tác vụ. Chỉ tạo kế hoạch ngắn, tối đa 4 bước. Mỗi bước phải là một dòng đánh số dạng 1. ... Không tuyên bố đã thực hiện hành động bên ngoài."),
+                                                            ChatMessage("user", "Lập kế hoạch để đạt mục tiêu sau:\n${current.goal}\nChỉ trả về các bước đánh số.")
+                                                        ),
+                                                        profile.copy(maxTokens = minOf(profile.maxTokens, 512))
+                                                    )
+                                                    if (planResult.isFailure) {
+                                                        current = current.copy(state = OrielTaskState.FAILED, error = planResult.exceptionOrNull()?.message ?: "Không lập được kế hoạch")
+                                                        taskStore.save(current)
+                                                        taskStatus = "Lập kế hoạch thất bại."
+                                                    } else {
+                                                        val rawPlan = planResult.getOrThrow()
+                                                        val parsed = rawPlan.lineSequence()
+                                                            .map { it.trim() }
+                                                            .filter { Regex("^\\d+[.)、-]\\s*.+").matches(it) }
+                                                            .map { it.replaceFirst(Regex("^\\d+[.)、-]\\s*"), "").trim() }
+                                                            .filter { it.isNotBlank() }
+                                                            .take(4).toList()
+                                                        val steps = if (parsed.isEmpty()) listOf("Phân tích mục tiêu và xây dựng câu trả lời hoàn chỉnh") else parsed
+                                                        current = current.copy(steps = steps, completedSteps = 0, result = "", state = OrielTaskState.RUNNING)
+                                                        taskStore.save(current)
+                                                        var accumulated = ""
+                                                        var failure: String? = null
+                                                        for ((index, step) in steps.withIndex()) {
+                                                            val result = chatRuntime.generate(
+                                                                listOf(
+                                                                    ChatMessage("system", profile.systemPrompt + "\nBạn đang thực hiện một bước trong tác vụ. Nêu rõ suy luận và kết quả; không giả vờ gọi công cụ hoặc làm việc ngoài ứng dụng."),
+                                                                    ChatMessage("user", "Mục tiêu tổng thể: ${current.goal}\nKế hoạch: ${steps.mapIndexed { i, s -> "${i + 1}. ${s}" }.joinToString("\n")}\nBước hiện tại (${index + 1}/${steps.size}): ${step}\nKết quả các bước trước:\n${accumulated.take(5000)}\nHãy hoàn thành bước hiện tại một cách cụ thể.")
+                                                                ),
+                                                                profile.copy(maxTokens = minOf(profile.maxTokens, 768))
+                                                            )
+                                                            if (result.isFailure) {
+                                                                failure = result.exceptionOrNull()?.message ?: "Suy luận bước ${index + 1} thất bại"
+                                                                break
+                                                            }
+                                                            accumulated += "\n\nBƯỚC ${index + 1}: ${step}\n${result.getOrThrow()}"
+                                                            current = current.copy(completedSteps = index + 1, result = accumulated, error = "")
+                                                            taskStore.save(current)
+                                                            val pos = taskItems.indexOfFirst { it.id == current.id }
+                                                            if (pos >= 0) taskItems[pos] = current
+                                                        }
+                                                        current = if (failure == null) current.copy(state = OrielTaskState.COMPLETED)
+                                                                  else current.copy(state = OrielTaskState.FAILED, error = failure)
+                                                        taskStore.save(current)
+                                                        val pos = taskItems.indexOfFirst { it.id == current.id }
+                                                        if (pos >= 0) taskItems[pos] = current else taskItems.add(0, current)
+                                                        taskStatus = if (failure == null) "Đã hoàn tất các bước suy luận local; không có hành động bên ngoài nào được thực hiện."
+                                                                     else "Tác vụ dừng ở bước ${current.completedSteps}: ${failure}"
+                                                    }
+                                                    taskBusy = false
+                                                }
+                                            }
+                                        ) { Text(if (taskBusy && task.state == OrielTaskState.RUNNING) "Đang chạy…" else "Chạy tác vụ") }
+                                        OutlinedButton(
+                                            enabled = !taskBusy,
+                                            onClick = {
+                                                taskStore.delete(task.id)
+                                                taskItems.removeAll { it.id == task.id }
+                                                taskStatus = "Đã xóa tác vụ khỏi bộ nhớ cục bộ."
+                                            }
+                                        ) { Text("Xóa") }
+                                    }
+                                }
+                            }
+                        }
                     }
                     else -> {
                         Text("Trò chuyện bằng mô hình local", style = MaterialTheme.typography.titleMedium)
