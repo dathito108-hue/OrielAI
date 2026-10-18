@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun OrielApp() {
     val context = LocalContext.current
@@ -142,11 +142,16 @@ private fun OrielApp() {
             ) {
                 Text("Qwen3.5-0.8B", style = MaterialTheme.typography.headlineSmall)
                 Text("Qwen là nền móng ban đầu; OrielAI sẽ phát triển lớp điều phối, bộ nhớ, công cụ và đánh giá riêng.")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Mô hình") })
-                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Hành vi AI") })
-                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Tác vụ") })
-                    FilterChip(selected = tab == 3, onClick = { tab = 3 }, label = { Text("Trò chuyện") })
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    maxItemsInEachRow = 2
+                ) {
+                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Mô hình", maxLines = 1) })
+                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Hành vi AI", maxLines = 1) })
+                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Tác vụ", maxLines = 1) })
+                    FilterChip(selected = tab == 3, onClick = { tab = 3 }, label = { Text("Trò chuyện", maxLines = 1) })
                 }
                 when (tab) {
                     0 -> {
@@ -358,7 +363,7 @@ private fun OrielApp() {
                                             chatReady = true
                                             chatStatus = "Mô hình đã được nạp. Bạn có thể trò chuyện."
                                         }.onFailure { e ->
-                                            chatStatus = "Không nạp được mô hình: ${e.message ?: "lỗi không xác định"}"
+                                            chatStatus = "Không nạp được mô hình [${e.javaClass.simpleName}]: ${e.message ?: e.cause?.toString() ?: e.toString()}"
                                         }
                                         chatBusy = false
                                     }
